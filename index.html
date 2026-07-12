@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- 念のための多層防御（Defense in depth）。万一XSSの糸口が生まれても、
+     外部への読み込み・送信先をあらかじめ絞ることで被害を抑える。 -->
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data:; base-uri 'none'; form-action 'none';">
 <title>旅のしおり</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -46,9 +50,9 @@
 
     <!-- 基本情報 -->
     <section class="bg-white rounded-2xl shadow-sm p-5 space-y-3">
-      <input id="titleInput" type="text" placeholder="旅行タイトル（例：沖縄旅行）"
+      <input id="titleInput" type="text" placeholder="旅行タイトル（例：沖縄旅行）" maxlength="200"
         class="w-full text-xl font-bold border-b-2 border-orange-100 focus:border-orange-400 outline-none py-1" />
-      <input id="datesInput" type="text" placeholder="日程（例：2026/08/01 〜 2026/08/03）"
+      <input id="datesInput" type="text" placeholder="日程（例：2026/08/01 〜 2026/08/03）" maxlength="100"
         class="w-full text-sm text-slate-500 border-b border-slate-100 focus:border-orange-300 outline-none py-1" />
     </section>
 
@@ -97,7 +101,7 @@
 <template id="timelineRowTemplate">
   <div class="timeline-row flex items-center gap-2" data-id="">
     <input type="time" class="time-input border border-slate-200 rounded-lg px-2 py-2 text-sm w-28" />
-    <input type="text" placeholder="内容（例：ホテルチェックイン）"
+    <input type="text" placeholder="内容（例：ホテルチェックイン）" maxlength="500"
       class="content-input flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
     <button class="delete-btn text-slate-300 hover:text-red-400 text-lg px-1" title="削除">✕</button>
   </div>
@@ -107,7 +111,7 @@
 <template id="itemRowTemplate">
   <div class="item-row flex items-center gap-2" data-id="">
     <input type="checkbox" class="check-input w-5 h-5 accent-orange-500 shrink-0" />
-    <input type="text" placeholder="持ち物（例：モバイルバッテリー）"
+    <input type="text" placeholder="持ち物（例：モバイルバッテリー）" maxlength="500"
       class="text-input flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
     <button class="delete-btn text-slate-300 hover:text-red-400 text-lg px-1" title="削除">✕</button>
   </div>
@@ -117,15 +121,25 @@
 (function () {
   'use strict';
 
+  // しおりURLの id はアクセス権そのもの（知っている人だけが編集できる）なので、
+  // 予測されにくい十分なランダム性を持たせる。サーバー側(Code.gs)もこの形式のみ受け付ける。
+  const MAX_LIST_LENGTH = 200; // サーバー側の上限と合わせる
+
   // ---------- ユーティリティ ----------
   function uuid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    // フォールバック（古いブラウザ向け簡易UUID）
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
+    // フォールバック（crypto.randomUUID非対応の環境向け）。
+    // Math.random() は暗号学的に安全ではないため、可能な限り crypto.getRandomValues を使う。
+    const bytes = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) {
+      crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0'));
+    return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
   }
 
   function getIdFromUrl() {
@@ -226,6 +240,9 @@
   }
 
   // ---------- レンダリング ----------
+  // 【XSS対策】ユーザーが入力した文字列（title/dates/timeline.content/items.text）は
+  // 必ず要素の .value に代入する（HTMLとして解釈されない）。innerHTML は下記の
+  // 固定文言（"まだ予定がありません" 等）にのみ使用し、ユーザー入力を絶対に混ぜないこと。
   function renderTimeline() {
     timelineList.innerHTML = '';
     if (state.timeline.length === 0) {
@@ -312,12 +329,20 @@
   datesInput.addEventListener('input', () => { state.dates = datesInput.value; scheduleSave(); });
 
   addTimelineBtn.addEventListener('click', () => {
+    if (state.timeline.length >= MAX_LIST_LENGTH) {
+      alert(`タイムラインは最大${MAX_LIST_LENGTH}件まで追加できます。`);
+      return;
+    }
     state.timeline.push({ id: uuid(), time: '', content: '' });
     renderTimeline();
     scheduleSave();
   });
 
   addItemBtn.addEventListener('click', () => {
+    if (state.items.length >= MAX_LIST_LENGTH) {
+      alert(`持ち物は最大${MAX_LIST_LENGTH}件まで追加できます。`);
+      return;
+    }
     state.items.push({ id: uuid(), text: '', checked: false });
     renderItems();
     scheduleSave();
