@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>旅のしおり</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; }
+  .fade-in { animation: fadeIn .25s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body class="bg-orange-50 min-h-screen text-slate-800">
+
+<!-- ============ ここを自分の GAS Web App URL に書き換えてください ============ -->
+<script>
+  const GAS_API_URL = 'https://script.google.com/macros/s/XXXXXXXXXXXXXXXXXXXXXXXX/exec';
+</script>
+<!-- ========================================================================== -->
+
+<div id="app" class="max-w-2xl mx-auto px-4 py-8">
+
+  <!-- ローディング -->
+  <div id="loadingView" class="text-center text-slate-400 py-20">
+    読み込み中…
+  </div>
+
+  <!-- トップページ（しおり未作成時） -->
+  <div id="landingView" class="hidden fade-in text-center py-24">
+    <h1 class="text-3xl font-bold mb-2">🧳 旅のしおり</h1>
+    <p class="text-slate-500 mb-8">URLを共有するだけで、みんなでタイムラインと持ち物をまとめられます。<br>登録もログインも不要です。</p>
+    <button id="createBtn"
+      class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full shadow-md transition">
+      ＋ 新しいしおりを作成
+    </button>
+  </div>
+
+  <!-- しおり編集画面 -->
+  <div id="editorView" class="hidden fade-in space-y-6 pb-24">
+
+    <header class="text-center">
+      <h1 class="text-2xl font-bold">🧳 旅のしおり</h1>
+    </header>
+
+    <!-- 基本情報 -->
+    <section class="bg-white rounded-2xl shadow-sm p-5 space-y-3">
+      <input id="titleInput" type="text" placeholder="旅行タイトル（例：沖縄旅行）"
+        class="w-full text-xl font-bold border-b-2 border-orange-100 focus:border-orange-400 outline-none py-1" />
+      <input id="datesInput" type="text" placeholder="日程（例：2026/08/01 〜 2026/08/03）"
+        class="w-full text-sm text-slate-500 border-b border-slate-100 focus:border-orange-300 outline-none py-1" />
+    </section>
+
+    <!-- タイムライン -->
+    <section class="bg-white rounded-2xl shadow-sm p-5">
+      <h2 class="font-bold text-lg mb-3 flex items-center gap-2">🕒 タイムライン</h2>
+      <div id="timelineList" class="space-y-2"></div>
+      <button id="addTimelineBtn"
+        class="mt-3 w-full text-sm text-orange-600 border border-dashed border-orange-300 rounded-lg py-2 hover:bg-orange-50 transition">
+        ＋ 予定を追加
+      </button>
+    </section>
+
+    <!-- 持ち物リスト -->
+    <section class="bg-white rounded-2xl shadow-sm p-5">
+      <h2 class="font-bold text-lg mb-3 flex items-center gap-2">🎒 持ち物リスト</h2>
+      <div id="itemsList" class="space-y-2"></div>
+      <button id="addItemBtn"
+        class="mt-3 w-full text-sm text-orange-600 border border-dashed border-orange-300 rounded-lg py-2 hover:bg-orange-50 transition">
+        ＋ 持ち物を追加
+      </button>
+    </section>
+
+    <!-- 共有エリア -->
+    <section class="bg-orange-100 rounded-2xl p-5 text-center space-y-3">
+      <p class="text-sm text-orange-800">このURLを一緒に行く人に共有してね！</p>
+      <div class="flex gap-2">
+        <input id="shareUrlInput" type="text" readonly
+          class="flex-1 bg-white rounded-lg px-3 py-2 text-xs text-slate-600 border border-orange-200" />
+        <button id="copyUrlBtn"
+          class="bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold px-4 rounded-lg transition whitespace-nowrap">
+          コピー
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <!-- 保存ステータス（右下固定） -->
+  <div id="saveStatus"
+    class="fixed bottom-4 right-4 bg-white shadow-md rounded-full px-4 py-2 text-xs text-slate-500 hidden">
+    保存済み
+  </div>
+</div>
+
+<!-- テンプレート（タイムライン行） -->
+<template id="timelineRowTemplate">
+  <div class="timeline-row flex items-center gap-2" data-id="">
+    <input type="time" class="time-input border border-slate-200 rounded-lg px-2 py-2 text-sm w-28" />
+    <input type="text" placeholder="内容（例：ホテルチェックイン）"
+      class="content-input flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
+    <button class="delete-btn text-slate-300 hover:text-red-400 text-lg px-1" title="削除">✕</button>
+  </div>
+</template>
+
+<!-- テンプレート（持ち物行） -->
+<template id="itemRowTemplate">
+  <div class="item-row flex items-center gap-2" data-id="">
+    <input type="checkbox" class="check-input w-5 h-5 accent-orange-500 shrink-0" />
+    <input type="text" placeholder="持ち物（例：モバイルバッテリー）"
+      class="text-input flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
+    <button class="delete-btn text-slate-300 hover:text-red-400 text-lg px-1" title="削除">✕</button>
+  </div>
+</template>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- ユーティリティ ----------
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    // フォールバック（古いブラウザ向け簡易UUID）
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  function getIdFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('id');
+  }
+
+  function buildShareUrl(id) {
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.searchParams.set('id', id);
+    return url.toString();
+  }
+
+  function debounce(fn, wait) {
+    let t = null;
+    return function (...args) {
+      clearTimeout(t);
+      t = setTimeout(() => fn.apply(this, args), wait);
+    };
+  }
+
+  // ---------- 状態 ----------
+  let state = {
+    id: null,
+    title: '',
+    dates: '',
+    timeline: [],
+    items: []
+  };
+
+  // ---------- DOM参照 ----------
+  const loadingView = document.getElementById('loadingView');
+  const landingView = document.getElementById('landingView');
+  const editorView = document.getElementById('editorView');
+  const createBtn = document.getElementById('createBtn');
+
+  const titleInput = document.getElementById('titleInput');
+  const datesInput = document.getElementById('datesInput');
+  const timelineList = document.getElementById('timelineList');
+  const itemsList = document.getElementById('itemsList');
+  const addTimelineBtn = document.getElementById('addTimelineBtn');
+  const addItemBtn = document.getElementById('addItemBtn');
+  const shareUrlInput = document.getElementById('shareUrlInput');
+  const copyUrlBtn = document.getElementById('copyUrlBtn');
+  const saveStatus = document.getElementById('saveStatus');
+
+  const timelineRowTemplate = document.getElementById('timelineRowTemplate');
+  const itemRowTemplate = document.getElementById('itemRowTemplate');
+
+  function showView(view) {
+    loadingView.classList.add('hidden');
+    landingView.classList.add('hidden');
+    editorView.classList.add('hidden');
+    view.classList.remove('hidden');
+  }
+
+  // ---------- API通信 ----------
+  // GAS のプリフライト(OPTIONS)非対応を回避するため、POSTは text/plain で送信する。
+  async function fetchItinerary(id) {
+    const res = await fetch(`${GAS_API_URL}?id=${encodeURIComponent(id)}`, { method: 'GET' });
+    return res.json();
+  }
+
+  async function saveItinerary(data) {
+    const res = await fetch(GAS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  }
+
+  // ---------- 保存ステータス表示 ----------
+  function showSaveStatus(text) {
+    saveStatus.textContent = text;
+    saveStatus.classList.remove('hidden');
+  }
+
+  const debouncedSave = debounce(async function () {
+    showSaveStatus('保存中…');
+    try {
+      const result = await saveItinerary(state);
+      if (result.success) {
+        const t = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        showSaveStatus(`保存済み（${t}）`);
+      } else {
+        showSaveStatus('保存に失敗しました');
+      }
+    } catch (e) {
+      showSaveStatus('保存に失敗しました（通信エラー）');
+    }
+  }, 1200);
+
+  function scheduleSave() {
+    showSaveStatus('編集中…');
+    debouncedSave();
+  }
+
+  // ---------- レンダリング ----------
+  function renderTimeline() {
+    timelineList.innerHTML = '';
+    if (state.timeline.length === 0) {
+      timelineList.innerHTML = '<p class="text-sm text-slate-300 text-center py-2">まだ予定がありません</p>';
+      return;
+    }
+    state.timeline
+      .slice()
+      .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'))
+      .forEach(entry => {
+        const node = timelineRowTemplate.content.cloneNode(true);
+        const row = node.querySelector('.timeline-row');
+        row.dataset.id = entry.id;
+        const timeInput = node.querySelector('.time-input');
+        const contentInput = node.querySelector('.content-input');
+        timeInput.value = entry.time || '';
+        contentInput.value = entry.content || '';
+
+        timeInput.addEventListener('input', () => {
+          entry.time = timeInput.value;
+          scheduleSave();
+        });
+        contentInput.addEventListener('input', () => {
+          entry.content = contentInput.value;
+          scheduleSave();
+        });
+        node.querySelector('.delete-btn').addEventListener('click', () => {
+          state.timeline = state.timeline.filter(e => e.id !== entry.id);
+          renderTimeline();
+          scheduleSave();
+        });
+
+        timelineList.appendChild(node);
+      });
+  }
+
+  function renderItems() {
+    itemsList.innerHTML = '';
+    if (state.items.length === 0) {
+      itemsList.innerHTML = '<p class="text-sm text-slate-300 text-center py-2">まだ持ち物がありません</p>';
+      return;
+    }
+    state.items.forEach(entry => {
+      const node = itemRowTemplate.content.cloneNode(true);
+      const row = node.querySelector('.item-row');
+      row.dataset.id = entry.id;
+      const checkInput = node.querySelector('.check-input');
+      const textInput = node.querySelector('.text-input');
+      checkInput.checked = !!entry.checked;
+      textInput.value = entry.text || '';
+      textInput.classList.toggle('line-through', !!entry.checked);
+      textInput.classList.toggle('text-slate-300', !!entry.checked);
+
+      checkInput.addEventListener('change', () => {
+        entry.checked = checkInput.checked;
+        textInput.classList.toggle('line-through', entry.checked);
+        textInput.classList.toggle('text-slate-300', entry.checked);
+        scheduleSave();
+      });
+      textInput.addEventListener('input', () => {
+        entry.text = textInput.value;
+        scheduleSave();
+      });
+      node.querySelector('.delete-btn').addEventListener('click', () => {
+        state.items = state.items.filter(e => e.id !== entry.id);
+        renderItems();
+        scheduleSave();
+      });
+
+      itemsList.appendChild(node);
+    });
+  }
+
+  function renderAll() {
+    titleInput.value = state.title || '';
+    datesInput.value = state.dates || '';
+    shareUrlInput.value = buildShareUrl(state.id);
+    renderTimeline();
+    renderItems();
+  }
+
+  // ---------- イベント ----------
+  titleInput.addEventListener('input', () => { state.title = titleInput.value; scheduleSave(); });
+  datesInput.addEventListener('input', () => { state.dates = datesInput.value; scheduleSave(); });
+
+  addTimelineBtn.addEventListener('click', () => {
+    state.timeline.push({ id: uuid(), time: '', content: '' });
+    renderTimeline();
+    scheduleSave();
+  });
+
+  addItemBtn.addEventListener('click', () => {
+    state.items.push({ id: uuid(), text: '', checked: false });
+    renderItems();
+    scheduleSave();
+  });
+
+  copyUrlBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrlInput.value);
+      copyUrlBtn.textContent = 'コピー済み✓';
+      setTimeout(() => { copyUrlBtn.textContent = 'コピー'; }, 1500);
+    } catch (e) {
+      shareUrlInput.select();
+      document.execCommand('copy');
+    }
+  });
+
+  createBtn.addEventListener('click', () => {
+    const newId = uuid();
+    window.location.href = buildShareUrl(newId);
+  });
+
+  // ---------- 初期化 ----------
+  async function init() {
+    const id = getIdFromUrl();
+
+    if (!id) {
+      showView(landingView);
+      return;
+    }
+
+    if (!GAS_API_URL || GAS_API_URL.indexOf('XXXX') !== -1) {
+      loadingView.innerHTML =
+        '<p class="text-red-400 text-sm px-6">⚠️ GAS_API_URL が設定されていません。<br>index.html 冒頭の GAS_API_URL を、デプロイしたWebアプリのURLに書き換えてください。</p>';
+      return;
+    }
+
+    state.id = id;
+
+    try {
+      const result = await fetchItinerary(id);
+      if (result.success) {
+        state.title = result.data.title || '';
+        state.dates = result.data.dates || '';
+        state.timeline = result.data.timeline || [];
+        state.items = result.data.items || [];
+      }
+      // success:false（＝新規ID）の場合は空の状態のまま編集画面を表示し、
+      // 最初の保存で新規行がスプレッドシートに作られる。
+      renderAll();
+      showView(editorView);
+    } catch (e) {
+      loadingView.innerHTML =
+        '<p class="text-red-400 text-sm px-6">⚠️ データの取得に失敗しました。通信環境をご確認のうえ再読み込みしてください。</p>';
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
