@@ -60,20 +60,32 @@
     <section class="bg-white rounded-2xl shadow-sm p-5">
       <h2 class="font-bold text-lg mb-3 flex items-center gap-2">🕒 タイムライン</h2>
       <div id="timelineList" class="space-y-2"></div>
-      <button id="addTimelineBtn"
-        class="mt-3 w-full text-sm text-orange-600 border border-dashed border-orange-300 rounded-lg py-2 hover:bg-orange-50 transition">
-        ＋ 予定を追加
-      </button>
+      <div class="mt-3 grid grid-cols-2 gap-2">
+        <button id="addTimelineBtn"
+          class="text-sm text-orange-600 border border-dashed border-orange-300 rounded-lg py-2 hover:bg-orange-50 transition">
+          ＋ 予定を追加
+        </button>
+        <button id="suggestTimelineBtn"
+          class="text-sm text-white bg-orange-500 hover:bg-orange-600 rounded-lg py-2 transition disabled:opacity-50 disabled:cursor-not-allowed">
+          ✨ AIにおまかせ
+        </button>
+      </div>
     </section>
 
     <!-- 持ち物リスト -->
     <section class="bg-white rounded-2xl shadow-sm p-5">
       <h2 class="font-bold text-lg mb-3 flex items-center gap-2">🎒 持ち物リスト</h2>
       <div id="itemsList" class="space-y-2"></div>
-      <button id="addItemBtn"
-        class="mt-3 w-full text-sm text-orange-600 border border-dashed border-orange-300 rounded-lg py-2 hover:bg-orange-50 transition">
-        ＋ 持ち物を追加
-      </button>
+      <div class="mt-3 grid grid-cols-2 gap-2">
+        <button id="addItemBtn"
+          class="text-sm text-orange-600 border border-dashed border-orange-300 rounded-lg py-2 hover:bg-orange-50 transition">
+          ＋ 持ち物を追加
+        </button>
+        <button id="suggestItemsBtn"
+          class="text-sm text-white bg-orange-500 hover:bg-orange-600 rounded-lg py-2 transition disabled:opacity-50 disabled:cursor-not-allowed">
+          ✨ AIにおまかせ
+        </button>
+      </div>
     </section>
 
     <!-- 共有エリア -->
@@ -183,6 +195,8 @@
   const itemsList = document.getElementById('itemsList');
   const addTimelineBtn = document.getElementById('addTimelineBtn');
   const addItemBtn = document.getElementById('addItemBtn');
+  const suggestTimelineBtn = document.getElementById('suggestTimelineBtn');
+  const suggestItemsBtn = document.getElementById('suggestItemsBtn');
   const shareUrlInput = document.getElementById('shareUrlInput');
   const copyUrlBtn = document.getElementById('copyUrlBtn');
   const saveStatus = document.getElementById('saveStatus');
@@ -347,6 +361,73 @@
     renderItems();
     scheduleSave();
   });
+
+  // ---------- AIにおまかせ（Geminiによるリスト作成支援） ----------
+  // GAS側にaction:'suggest'として送り、APIキーはサーバー側（GAS）に隠したまま呼び出す。
+  async function requestSuggestions(type, btn) {
+    if (!state.title || !state.title.trim()) {
+      alert('先に旅行タイトル（行き先）を入力してください。');
+      titleInput.focus();
+      return;
+    }
+
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '✨ 考え中…';
+
+    try {
+      const existing = type === 'timeline'
+        ? state.timeline.map(e => e.content).filter(Boolean)
+        : state.items.map(e => e.text).filter(Boolean);
+
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'suggest',
+          type: type,
+          title: state.title,
+          dates: state.dates,
+          existing: existing
+        })
+      });
+      const result = await res.json();
+
+      if (!result.success) {
+        alert(result.error || 'AI提案の取得に失敗しました。');
+        return;
+      }
+
+      const suggestions = result.suggestions || [];
+      if (suggestions.length === 0) {
+        alert('提案が見つかりませんでした。内容を変えてもう一度お試しください。');
+        return;
+      }
+
+      if (type === 'timeline') {
+        suggestions.forEach(s => {
+          if (state.timeline.length >= MAX_LIST_LENGTH) return;
+          state.timeline.push({ id: uuid(), time: s.time || '', content: s.content || '' });
+        });
+        renderTimeline();
+      } else {
+        suggestions.forEach(s => {
+          if (state.items.length >= MAX_LIST_LENGTH) return;
+          state.items.push({ id: uuid(), text: s.text || '', checked: false });
+        });
+        renderItems();
+      }
+      scheduleSave();
+    } catch (e) {
+      alert('AI提案の取得に失敗しました（通信エラー）。');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+
+  suggestTimelineBtn.addEventListener('click', () => requestSuggestions('timeline', suggestTimelineBtn));
+  suggestItemsBtn.addEventListener('click', () => requestSuggestions('items', suggestItemsBtn));
 
   copyUrlBtn.addEventListener('click', async () => {
     try {
