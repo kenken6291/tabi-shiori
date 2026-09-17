@@ -20,7 +20,7 @@
 
 <!-- ============ ここを自分の GAS Web App URL に書き換えてください ============ -->
 <script>
-  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbytvsBAjAc52PybFKsZze-nPh-BCYJJmDkSadJpNwrlYTjygx2nLhB_COxLGCkDpi3S/exec';
+  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyGuwXo0anngEvBsnJ6KyNAbaVRJkox0IzfBaWPjSCGeQ9WojOJPZap4f_lc_uVGdcm/exec';
 </script>
 <!-- ========================================================================== -->
 
@@ -30,6 +30,7 @@
     <button id="openRegisterBtn" class="text-orange-600 font-bold hover:underline">会員登録</button>
   </span>
   <span id="authMemberLinks" class="hidden items-center gap-4">
+    <button id="newItineraryBtn" class="text-orange-600 font-bold hover:underline">＋ 新規作成</button>
     <span class="text-slate-500">👤 <span id="authNickname" class="font-bold"></span>さん</span>
     <button id="openChangePasswordBtn" class="text-slate-400 hover:text-orange-600 underline">パスワード変更</button>
     <button id="logoutBtn" class="text-slate-400 hover:text-red-500 underline">ログアウト</button>
@@ -78,8 +79,9 @@
   <!-- しおり編集画面（ログイン中の作成者以外は閲覧のみ） -->
   <div id="editorView" class="hidden fade-in space-y-6 pb-24">
 
-    <header class="text-center">
+    <header class="text-center space-y-1">
       <h1 class="text-2xl font-bold">🧳 旅のしおり</h1>
+      <a href="./" class="text-xs text-orange-500 hover:underline">🗂 マイしおり一覧へ</a>
     </header>
 
     <p id="readOnlyBanner" class="hidden bg-slate-100 text-slate-500 text-xs rounded-xl p-3 text-center">
@@ -434,6 +436,7 @@
   const authGuestLinks = document.getElementById('authGuestLinks');
   const authMemberLinks = document.getElementById('authMemberLinks');
   const authNickname = document.getElementById('authNickname');
+  const newItineraryBtn = document.getElementById('newItineraryBtn');
   const openLoginBtn = document.getElementById('openLoginBtn');
   const openRegisterBtn = document.getElementById('openRegisterBtn');
   const openChangePasswordBtn = document.getElementById('openChangePasswordBtn');
@@ -973,7 +976,7 @@
     }
   });
 
-  createBtn.addEventListener('click', () => {
+  function goToNewItinerary() {
     if (!auth.member) {
       alert('しおりを作成するにはログインが必要です。');
       loginError.classList.add('hidden');
@@ -982,7 +985,10 @@
     }
     const newId = uuid();
     window.location.href = buildShareUrl(newId);
-  });
+  }
+
+  createBtn.addEventListener('click', goToNewItinerary);
+  newItineraryBtn.addEventListener('click', goToNewItinerary);
 
   loginRequiredLoginBtn.addEventListener('click', () => {
     loginError.classList.add('hidden');
