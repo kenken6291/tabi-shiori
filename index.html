@@ -24,6 +24,18 @@
 </script>
 <!-- ========================================================================== -->
 
+<div id="authBar" class="max-w-2xl mx-auto px-4 pt-4 flex justify-end gap-4 text-xs">
+  <span id="authGuestLinks" class="hidden gap-4">
+    <button id="openLoginBtn" class="text-orange-600 font-bold hover:underline">ログイン</button>
+    <button id="openRegisterBtn" class="text-orange-600 font-bold hover:underline">会員登録</button>
+  </span>
+  <span id="authMemberLinks" class="hidden items-center gap-4">
+    <span class="text-slate-500">👤 <span id="authNickname" class="font-bold"></span>さん</span>
+    <button id="openChangePasswordBtn" class="text-slate-400 hover:text-orange-600 underline">パスワード変更</button>
+    <button id="logoutBtn" class="text-slate-400 hover:text-red-500 underline">ログアウト</button>
+  </span>
+</div>
+
 <div id="app" class="max-w-2xl mx-auto px-4 py-8">
 
   <!-- ローディング -->
@@ -34,11 +46,17 @@
   <!-- トップページ（しおり未作成時） -->
   <div id="landingView" class="hidden fade-in text-center py-24">
     <h1 class="text-3xl font-bold mb-2">🧳 旅のしおり</h1>
-    <p class="text-slate-500 mb-8">URLを共有するだけで、みんなでタイムラインと持ち物をまとめられます。<br>登録もログインも不要です。</p>
+    <p class="text-slate-500 mb-8">URLを共有するだけで、みんなでタイムラインと持ち物をまとめられます。<br>閲覧は登録不要、作成・編集には会員ログインが必要です。</p>
     <button id="createBtn"
       class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full shadow-md transition">
       ＋ 新しいしおりを作成
     </button>
+
+    <!-- ログイン中の会員が作成したしおり一覧（サーバー側、どの端末からでも見える） -->
+    <div id="myItinerariesSection" class="hidden mt-10 text-left max-w-md mx-auto">
+      <h2 class="text-sm font-bold text-slate-400 mb-2 text-center">🗂 マイしおり</h2>
+      <div id="myItinerariesList" class="space-y-2"></div>
+    </div>
 
     <!-- このブラウザで過去に開いたしおりの履歴（localStorage） -->
     <div id="historySection" class="hidden mt-10 text-left max-w-md mx-auto">
@@ -47,26 +65,40 @@
     </div>
   </div>
 
-  <!-- しおり編集画面 -->
+  <!-- ログインが必要な新規しおり（URLは有効だが、まだ作成されていない＆未ログイン） -->
+  <div id="loginRequiredView" class="hidden fade-in text-center py-24">
+    <h1 class="text-3xl font-bold mb-2">🧳 旅のしおり</h1>
+    <p class="text-slate-500 mb-8">このしおりはまだ作成されていません。<br>作成するには会員ログインが必要です。</p>
+    <button id="loginRequiredLoginBtn"
+      class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full shadow-md transition">
+      ログイン / 会員登録
+    </button>
+  </div>
+
+  <!-- しおり編集画面（ログイン中の作成者以外は閲覧のみ） -->
   <div id="editorView" class="hidden fade-in space-y-6 pb-24">
 
     <header class="text-center">
       <h1 class="text-2xl font-bold">🧳 旅のしおり</h1>
     </header>
 
+    <p id="readOnlyBanner" class="hidden bg-slate-100 text-slate-500 text-xs rounded-xl p-3 text-center">
+      🔒 閲覧のみです。編集するには作成者としてログインしてください。
+    </p>
+
     <!-- 基本情報 -->
     <section class="bg-white rounded-2xl shadow-sm p-5 space-y-3">
       <input id="titleInput" type="text" placeholder="旅行タイトル（例：沖縄旅行）" maxlength="200"
-        class="w-full text-xl font-bold border-b-2 border-orange-100 focus:border-orange-400 outline-none py-1" />
+        class="w-full text-xl font-bold border-b-2 border-orange-100 focus:border-orange-400 outline-none py-1 disabled:text-slate-400 disabled:cursor-default" />
       <input id="datesInput" type="text" placeholder="日程（例：2026/08/01 〜 2026/08/03）" maxlength="100"
-        class="w-full text-sm text-slate-500 border-b border-slate-100 focus:border-orange-300 outline-none py-1" />
+        class="w-full text-sm text-slate-500 border-b border-slate-100 focus:border-orange-300 outline-none py-1 disabled:cursor-default" />
     </section>
 
     <!-- タイムライン -->
     <section class="bg-white rounded-2xl shadow-sm p-5">
       <h2 class="font-bold text-lg mb-3 flex items-center gap-2">🕒 タイムライン</h2>
       <div id="timelineList" class="space-y-2"></div>
-      <div class="mt-3 grid grid-cols-2 gap-2">
+      <div id="timelineActionsRow" class="mt-3 grid grid-cols-2 gap-2">
         <button id="addTimelineBtn"
           class="text-sm text-orange-600 border border-dashed border-orange-300 rounded-lg py-2 hover:bg-orange-50 transition">
           ＋ 予定を追加
@@ -82,7 +114,7 @@
     <section class="bg-white rounded-2xl shadow-sm p-5">
       <h2 class="font-bold text-lg mb-3 flex items-center gap-2">🎒 持ち物リスト</h2>
       <div id="itemsList" class="space-y-2"></div>
-      <div class="mt-3 grid grid-cols-2 gap-2">
+      <div id="itemsActionsRow" class="mt-3 grid grid-cols-2 gap-2">
         <button id="addItemBtn"
           class="text-sm text-orange-600 border border-dashed border-orange-300 rounded-lg py-2 hover:bg-orange-50 transition">
           ＋ 持ち物を追加
@@ -96,7 +128,7 @@
 
     <!-- 共有エリア -->
     <section class="bg-orange-100 rounded-2xl p-5 text-center space-y-3">
-      <p class="text-sm text-orange-800">このURLを一緒に行く人に共有してね！</p>
+      <p class="text-sm text-orange-800">このURLを一緒に行く人に共有してね！（ログインなしで閲覧できます）</p>
       <div class="flex gap-2">
         <input id="shareUrlInput" type="text" readonly
           class="flex-1 bg-white rounded-lg px-3 py-2 text-xs text-slate-600 border border-orange-200" />
@@ -107,8 +139,28 @@
       </div>
     </section>
 
+    <!-- 公開相手（招待メール送信） -->
+    <section id="shareRecipientsSection" class="hidden bg-white rounded-2xl shadow-sm p-5 space-y-3">
+      <h2 class="font-bold text-lg flex items-center gap-2">📧 公開相手</h2>
+      <p class="text-xs text-slate-400">メールアドレスを登録すると、このしおりのURLをメールで送れます。送信相手はログインなしで閲覧できます。</p>
+      <div id="recipientsList" class="space-y-2"></div>
+      <div class="flex gap-2">
+        <input id="newRecipientEmail" type="email" placeholder="メールアドレスを追加" maxlength="200"
+          class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
+        <button id="addRecipientBtn"
+          class="text-sm text-orange-600 border border-dashed border-orange-300 rounded-lg px-4 hover:bg-orange-50 transition whitespace-nowrap">
+          追加
+        </button>
+      </div>
+      <button id="sendInviteBtn"
+        class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg transition disabled:opacity-50">
+        ✉️ 登録した相手にURLを送信
+      </button>
+      <p id="inviteStatus" class="hidden text-xs"></p>
+    </section>
+
     <!-- 削除 -->
-    <section class="text-center pt-2">
+    <section id="deleteSection" class="text-center pt-2">
       <button id="deleteBtn" class="text-xs text-slate-400 hover:text-red-500 underline transition">
         🗑 このしおりを削除する
       </button>
@@ -122,12 +174,112 @@
   </div>
 </div>
 
+<!-- 会員登録モーダル -->
+<div id="registerModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl shadow-lg p-6 w-full max-w-sm space-y-4">
+    <div class="flex justify-between items-center">
+      <h2 class="font-bold text-lg">会員登録</h2>
+      <button class="modal-close-btn text-slate-400 hover:text-slate-600" data-modal="registerModal">✕</button>
+    </div>
+    <p class="text-xs text-slate-500">登録すると、どの端末からでも自分のしおり一覧を確認できます（しおりの作成・共有自体は登録なしでもご利用いただけます）。</p>
+    <div class="space-y-2">
+      <input id="registerNickname" type="text" placeholder="ニックネーム" maxlength="50"
+        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
+      <input id="registerEmail" type="email" placeholder="メールアドレス" maxlength="200"
+        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
+    </div>
+    <p id="registerError" class="hidden text-xs text-red-500"></p>
+    <button id="registerSubmitBtn"
+      class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg transition disabled:opacity-50">
+      登録して仮パスワードを受け取る
+    </button>
+    <p class="text-xs text-slate-400 text-center">登録済みの方は <button id="switchToLoginBtn" class="text-orange-600 underline">ログイン</button></p>
+  </div>
+</div>
+
+<!-- ログインモーダル -->
+<div id="loginModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl shadow-lg p-6 w-full max-w-sm space-y-4">
+    <div class="flex justify-between items-center">
+      <h2 class="font-bold text-lg">ログイン</h2>
+      <button class="modal-close-btn text-slate-400 hover:text-slate-600" data-modal="loginModal">✕</button>
+    </div>
+    <div class="space-y-2">
+      <input id="loginEmail" type="email" placeholder="メールアドレス" maxlength="200"
+        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
+      <div class="relative">
+        <input id="loginPassword" type="password" placeholder="パスワード" maxlength="100"
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 pr-14 text-sm outline-none focus:border-orange-400" />
+        <button type="button" id="loginPasswordToggle"
+          class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-orange-500">表示</button>
+      </div>
+    </div>
+    <p id="loginError" class="hidden text-xs text-red-500"></p>
+    <button id="loginSubmitBtn"
+      class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg transition disabled:opacity-50">
+      ログイン
+    </button>
+    <div class="flex justify-between text-xs text-slate-400">
+      <button id="switchToRegisterBtn" class="text-orange-600 underline">会員登録はこちら</button>
+      <button id="switchToForgotBtn" class="underline hover:text-orange-600">パスワードを忘れた方</button>
+    </div>
+  </div>
+</div>
+
+<!-- パスワード再発行モーダル -->
+<div id="forgotModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl shadow-lg p-6 w-full max-w-sm space-y-4">
+    <div class="flex justify-between items-center">
+      <h2 class="font-bold text-lg">パスワード再発行</h2>
+      <button class="modal-close-btn text-slate-400 hover:text-slate-600" data-modal="forgotModal">✕</button>
+    </div>
+    <p class="text-xs text-slate-500">登録済みのメールアドレス宛に、新しい仮パスワードを送信します。</p>
+    <input id="forgotEmail" type="email" placeholder="メールアドレス" maxlength="200"
+      class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
+    <p id="forgotError" class="hidden text-xs text-red-500"></p>
+    <p id="forgotSuccess" class="hidden text-xs text-green-600"></p>
+    <button id="forgotSubmitBtn"
+      class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg transition disabled:opacity-50">
+      仮パスワードを送信
+    </button>
+  </div>
+</div>
+
+<!-- パスワード変更モーダル（通常変更・初回強制変更 共用） -->
+<div id="changePasswordModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+  <div class="bg-white rounded-2xl shadow-lg p-6 w-full max-w-sm space-y-4">
+    <div class="flex justify-between items-center">
+      <h2 class="font-bold text-lg">パスワード変更</h2>
+      <button id="changePasswordCloseBtn" class="modal-close-btn text-slate-400 hover:text-slate-600" data-modal="changePasswordModal">✕</button>
+    </div>
+    <p id="changePasswordForcedNote" class="hidden text-xs text-orange-600">仮パスワードでログインしました。安全のため、新しいパスワードを設定してください。</p>
+    <div class="space-y-2">
+      <div id="currentPasswordWrap">
+        <input id="currentPasswordInput" type="password" placeholder="現在のパスワード" maxlength="100"
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
+      </div>
+      <div class="relative">
+        <input id="newPasswordInput" type="password" placeholder="新しいパスワード（8文字以上）" maxlength="100"
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 pr-14 text-sm outline-none focus:border-orange-400" />
+        <button type="button" id="newPasswordToggle"
+          class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-orange-500">表示</button>
+      </div>
+    </div>
+    <p id="changePasswordError" class="hidden text-xs text-red-500"></p>
+    <button id="changePasswordSubmitBtn"
+      class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg transition disabled:opacity-50">
+      変更する
+    </button>
+  </div>
+</div>
+
 <!-- テンプレート（タイムライン行） -->
 <template id="timelineRowTemplate">
-  <div class="timeline-row flex items-center gap-2" data-id="">
-    <input type="time" class="time-input border border-slate-200 rounded-lg px-2 py-2 text-sm w-28" />
+  <div class="timeline-row flex flex-wrap items-center gap-2" data-id="">
+    <input type="date" class="date-input border border-slate-200 rounded-lg px-2 py-2 text-sm w-[9.5rem]" />
+    <input type="time" class="time-input border border-slate-200 rounded-lg px-2 py-2 text-sm w-24" />
     <input type="text" placeholder="内容（例：ホテルチェックイン）" maxlength="500"
-      class="content-input flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
+      class="content-input flex-1 min-w-[10rem] border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400" />
     <button class="delete-btn text-slate-300 hover:text-red-400 text-lg px-1" title="削除">✕</button>
   </div>
 </template>
@@ -228,19 +380,35 @@
     title: '',
     dates: '',
     timeline: [],
-    items: []
+    items: [],
+    sharedWith: []
   };
+  // このしおりを編集できるか（＝ログイン中の本人が所有者、または未所有で新規作成中）
+  let canEdit = false;
+
+  // ログイン状態（トークンは localStorage に保持。会員情報はサーバーの都度検証結果を使う）
+  const AUTH_TOKEN_KEY = 'tabiShioriAuthToken';
+  let auth = {
+    token: null,
+    member: null // { id, nickname, email, mustChangePassword }
+  };
+  let isForcedPasswordChange = false;
 
   // ---------- DOM参照 ----------
   const loadingView = document.getElementById('loadingView');
   const landingView = document.getElementById('landingView');
+  const loginRequiredView = document.getElementById('loginRequiredView');
+  const loginRequiredLoginBtn = document.getElementById('loginRequiredLoginBtn');
   const editorView = document.getElementById('editorView');
   const createBtn = document.getElementById('createBtn');
+  const readOnlyBanner = document.getElementById('readOnlyBanner');
 
   const titleInput = document.getElementById('titleInput');
   const datesInput = document.getElementById('datesInput');
   const timelineList = document.getElementById('timelineList');
   const itemsList = document.getElementById('itemsList');
+  const timelineActionsRow = document.getElementById('timelineActionsRow');
+  const itemsActionsRow = document.getElementById('itemsActionsRow');
   const addTimelineBtn = document.getElementById('addTimelineBtn');
   const addItemBtn = document.getElementById('addItemBtn');
   const suggestTimelineBtn = document.getElementById('suggestTimelineBtn');
@@ -248,9 +416,60 @@
   const shareUrlInput = document.getElementById('shareUrlInput');
   const copyUrlBtn = document.getElementById('copyUrlBtn');
   const saveStatus = document.getElementById('saveStatus');
+  const deleteSection = document.getElementById('deleteSection');
   const deleteBtn = document.getElementById('deleteBtn');
   const historySection = document.getElementById('historySection');
   const historyList = document.getElementById('historyList');
+  const myItinerariesSection = document.getElementById('myItinerariesSection');
+  const myItinerariesList = document.getElementById('myItinerariesList');
+
+  const shareRecipientsSection = document.getElementById('shareRecipientsSection');
+  const recipientsList = document.getElementById('recipientsList');
+  const newRecipientEmail = document.getElementById('newRecipientEmail');
+  const addRecipientBtn = document.getElementById('addRecipientBtn');
+  const sendInviteBtn = document.getElementById('sendInviteBtn');
+  const inviteStatus = document.getElementById('inviteStatus');
+
+  const authBar = document.getElementById('authBar');
+  const authGuestLinks = document.getElementById('authGuestLinks');
+  const authMemberLinks = document.getElementById('authMemberLinks');
+  const authNickname = document.getElementById('authNickname');
+  const openLoginBtn = document.getElementById('openLoginBtn');
+  const openRegisterBtn = document.getElementById('openRegisterBtn');
+  const openChangePasswordBtn = document.getElementById('openChangePasswordBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+
+  const registerModal = document.getElementById('registerModal');
+  const registerNickname = document.getElementById('registerNickname');
+  const registerEmail = document.getElementById('registerEmail');
+  const registerError = document.getElementById('registerError');
+  const registerSubmitBtn = document.getElementById('registerSubmitBtn');
+  const switchToLoginBtn = document.getElementById('switchToLoginBtn');
+
+  const loginModal = document.getElementById('loginModal');
+  const loginEmail = document.getElementById('loginEmail');
+  const loginPassword = document.getElementById('loginPassword');
+  const loginPasswordToggle = document.getElementById('loginPasswordToggle');
+  const loginError = document.getElementById('loginError');
+  const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+  const switchToRegisterBtn = document.getElementById('switchToRegisterBtn');
+  const switchToForgotBtn = document.getElementById('switchToForgotBtn');
+
+  const forgotModal = document.getElementById('forgotModal');
+  const forgotEmail = document.getElementById('forgotEmail');
+  const forgotError = document.getElementById('forgotError');
+  const forgotSuccess = document.getElementById('forgotSuccess');
+  const forgotSubmitBtn = document.getElementById('forgotSubmitBtn');
+
+  const changePasswordModal = document.getElementById('changePasswordModal');
+  const changePasswordCloseBtn = document.getElementById('changePasswordCloseBtn');
+  const changePasswordForcedNote = document.getElementById('changePasswordForcedNote');
+  const currentPasswordWrap = document.getElementById('currentPasswordWrap');
+  const currentPasswordInput = document.getElementById('currentPasswordInput');
+  const newPasswordInput = document.getElementById('newPasswordInput');
+  const newPasswordToggle = document.getElementById('newPasswordToggle');
+  const changePasswordError = document.getElementById('changePasswordError');
+  const changePasswordSubmitBtn = document.getElementById('changePasswordSubmitBtn');
 
   const timelineRowTemplate = document.getElementById('timelineRowTemplate');
   const itemRowTemplate = document.getElementById('itemRowTemplate');
@@ -258,14 +477,83 @@
   function showView(view) {
     loadingView.classList.add('hidden');
     landingView.classList.add('hidden');
+    loginRequiredView.classList.add('hidden');
     editorView.classList.add('hidden');
     view.classList.remove('hidden');
+  }
+
+  // ---------- モーダル共通処理 ----------
+  function openModal(modal) {
+    modal.classList.remove('hidden');
+  }
+  function closeModal(modal) {
+    modal.classList.add('hidden');
+  }
+
+  document.querySelectorAll('.modal-close-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      closeModal(document.getElementById(btn.dataset.modal));
+    });
+  });
+
+  [registerModal, loginModal, forgotModal, changePasswordModal].forEach(modal => {
+    modal.addEventListener('click', (ev) => {
+      if (ev.target !== modal) return; // 背景（カード外側）クリックのみ対象
+      if (modal === changePasswordModal && isForcedPasswordChange) return; // 強制変更中は閉じさせない
+      closeModal(modal);
+    });
+  });
+
+  // ---------- 会員認証：表示更新 ----------
+  function renderAuthBar() {
+    if (auth.member) {
+      authGuestLinks.classList.add('hidden');
+      authGuestLinks.classList.remove('flex');
+      authMemberLinks.classList.remove('hidden');
+      authMemberLinks.classList.add('flex');
+      authNickname.textContent = auth.member.nickname || '';
+    } else {
+      authMemberLinks.classList.add('hidden');
+      authMemberLinks.classList.remove('flex');
+      authGuestLinks.classList.remove('hidden');
+      authGuestLinks.classList.add('flex');
+    }
+  }
+
+  async function restoreAuth() {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!token) return;
+    try {
+      const result = await apiGet({ action: 'me', token: token });
+      if (result.success) {
+        auth.token = token;
+        auth.member = result.member;
+      } else {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+      }
+    } catch (e) {
+      // 通信エラー時はトークンを保持したまま何もしない（次回起動時に再試行）
+    }
+  }
+
+  function openForcedChangePassword() {
+    isForcedPasswordChange = true;
+    changePasswordForcedNote.classList.remove('hidden');
+    currentPasswordWrap.classList.add('hidden');
+    changePasswordCloseBtn.classList.add('hidden');
+    changePasswordError.classList.add('hidden');
+    currentPasswordInput.value = '';
+    newPasswordInput.value = '';
+    openModal(changePasswordModal);
   }
 
   // ---------- API通信 ----------
   // GAS のプリフライト(OPTIONS)非対応を回避するため、POSTは text/plain で送信する。
   async function fetchItinerary(id) {
-    const res = await fetch(`${GAS_API_URL}?id=${encodeURIComponent(id)}`, { method: 'GET' });
+    const params = { id: id };
+    if (auth.token) params.token = auth.token;
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${GAS_API_URL}?${qs}`, { method: 'GET' });
     return res.json();
   }
 
@@ -273,7 +561,7 @@
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(data)
+      body: JSON.stringify(Object.assign({}, data, { token: auth.token || '' }))
     });
     return res.json();
   }
@@ -282,8 +570,24 @@
     const res = await fetch(GAS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'delete', id: id })
+      body: JSON.stringify({ action: 'delete', id: id, token: auth.token || '' })
     });
+    return res.json();
+  }
+
+  // 会員機能（登録・ログイン等）共通のPOST/GETヘルパー
+  async function apiPost(payload) {
+    const res = await fetch(GAS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  }
+
+  async function apiGet(params) {
+    const qs = new URLSearchParams(params).toString();
+    const res = await fetch(`${GAS_API_URL}?${qs}`, { method: 'GET' });
     return res.json();
   }
 
@@ -294,6 +598,7 @@
   }
 
   const debouncedSave = debounce(async function () {
+    if (!canEdit) return; // 権限がない状態（読み込み直後の一瞬など）では保存しない
     showSaveStatus('保存中…');
     try {
       const result = await saveItinerary(state);
@@ -302,7 +607,7 @@
         showSaveStatus(`保存済み（${t}）`);
         upsertHistory(state.id, state.title, state.dates);
       } else {
-        showSaveStatus('保存に失敗しました');
+        showSaveStatus(result.error || '保存に失敗しました');
       }
     } catch (e) {
       showSaveStatus('保存に失敗しました（通信エラー）');
@@ -310,6 +615,7 @@
   }, 1200);
 
   function scheduleSave() {
+    if (!canEdit) return;
     showSaveStatus('編集中…');
     debouncedSave();
   }
@@ -326,16 +632,34 @@
     }
     state.timeline
       .slice()
-      .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'))
+      .sort((a, b) => {
+        const keyA = (a.date || '9999-99-99') + ' ' + (a.time || '99:99');
+        const keyB = (b.date || '9999-99-99') + ' ' + (b.time || '99:99');
+        return keyA.localeCompare(keyB);
+      })
       .forEach(entry => {
         const node = timelineRowTemplate.content.cloneNode(true);
         const row = node.querySelector('.timeline-row');
         row.dataset.id = entry.id;
+        const dateInput = node.querySelector('.date-input');
         const timeInput = node.querySelector('.time-input');
         const contentInput = node.querySelector('.content-input');
+        dateInput.value = entry.date || '';
         timeInput.value = entry.time || '';
         contentInput.value = entry.content || '';
 
+        const timelineDeleteBtn = node.querySelector('.delete-btn');
+        if (!canEdit) {
+          dateInput.disabled = true;
+          timeInput.disabled = true;
+          contentInput.disabled = true;
+          timelineDeleteBtn.classList.add('hidden');
+        }
+
+        dateInput.addEventListener('input', () => {
+          entry.date = dateInput.value;
+          scheduleSave();
+        });
         timeInput.addEventListener('input', () => {
           entry.time = timeInput.value;
           scheduleSave();
@@ -344,7 +668,7 @@
           entry.content = contentInput.value;
           scheduleSave();
         });
-        node.querySelector('.delete-btn').addEventListener('click', () => {
+        timelineDeleteBtn.addEventListener('click', () => {
           state.timeline = state.timeline.filter(e => e.id !== entry.id);
           renderTimeline();
           scheduleSave();
@@ -371,6 +695,13 @@
       textInput.classList.toggle('line-through', !!entry.checked);
       textInput.classList.toggle('text-slate-300', !!entry.checked);
 
+      const itemDeleteBtn = node.querySelector('.delete-btn');
+      if (!canEdit) {
+        checkInput.disabled = true;
+        textInput.disabled = true;
+        itemDeleteBtn.classList.add('hidden');
+      }
+
       checkInput.addEventListener('change', () => {
         entry.checked = checkInput.checked;
         textInput.classList.toggle('line-through', entry.checked);
@@ -381,7 +712,7 @@
         entry.text = textInput.value;
         scheduleSave();
       });
-      node.querySelector('.delete-btn').addEventListener('click', () => {
+      itemDeleteBtn.addEventListener('click', () => {
         state.items = state.items.filter(e => e.id !== entry.id);
         renderItems();
         scheduleSave();
@@ -452,12 +783,92 @@
     });
   }
 
+  // ログイン中の会員が作成したしおり一覧をサーバーから取得して表示する（端末をまたいで見える）。
+  async function loadMyItineraries() {
+    if (!auth.member) {
+      myItinerariesSection.classList.add('hidden');
+      return;
+    }
+    try {
+      const result = await apiGet({ action: 'myItineraries', token: auth.token });
+      if (!result.success) {
+        myItinerariesSection.classList.add('hidden');
+        return;
+      }
+      const list = result.itineraries || [];
+      if (list.length === 0) {
+        myItinerariesSection.classList.add('hidden');
+        return;
+      }
+      myItinerariesSection.classList.remove('hidden');
+      myItinerariesList.innerHTML = '';
+      list.forEach(entry => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'w-full bg-white rounded-xl shadow-sm p-3 text-left';
+        const titleP = document.createElement('p');
+        titleP.className = 'font-bold text-sm truncate';
+        titleP.textContent = entry.title && entry.title.trim() ? entry.title : '（無題のしおり）';
+        const subP = document.createElement('p');
+        subP.className = 'text-xs text-slate-400 truncate';
+        subP.textContent = entry.dates || '';
+        row.appendChild(titleP);
+        row.appendChild(subP);
+        row.addEventListener('click', () => { window.location.href = buildShareUrl(entry.id); });
+        myItinerariesList.appendChild(row);
+      });
+    } catch (e) {
+      myItinerariesSection.classList.add('hidden');
+    }
+  }
+
+  // 編集権限に応じて各種UIの表示・操作可否を切り替える。
+  function applyEditPermission() {
+    readOnlyBanner.classList.toggle('hidden', canEdit);
+    titleInput.disabled = !canEdit;
+    datesInput.disabled = !canEdit;
+    timelineActionsRow.classList.toggle('hidden', !canEdit);
+    itemsActionsRow.classList.toggle('hidden', !canEdit);
+    shareRecipientsSection.classList.toggle('hidden', !canEdit);
+    deleteSection.classList.toggle('hidden', !canEdit);
+  }
+
+  // 【XSS対策】メールアドレスもユーザー入力なので textContent で挿入する。
+  function renderRecipients() {
+    recipientsList.innerHTML = '';
+    if (state.sharedWith.length === 0) {
+      recipientsList.innerHTML = '<p class="text-xs text-slate-300">まだ登録されていません</p>';
+      return;
+    }
+    state.sharedWith.forEach(email => {
+      const chip = document.createElement('div');
+      chip.className = 'flex items-center justify-between bg-orange-50 rounded-lg px-3 py-1.5 text-sm';
+      const span = document.createElement('span');
+      span.className = 'truncate';
+      span.textContent = email;
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'text-slate-300 hover:text-red-400 px-1 shrink-0';
+      removeBtn.textContent = '✕';
+      removeBtn.addEventListener('click', () => {
+        state.sharedWith = state.sharedWith.filter(e => e !== email);
+        renderRecipients();
+        scheduleSave();
+      });
+      chip.appendChild(span);
+      chip.appendChild(removeBtn);
+      recipientsList.appendChild(chip);
+    });
+  }
+
   function renderAll() {
     titleInput.value = state.title || '';
     datesInput.value = state.dates || '';
     shareUrlInput.value = buildShareUrl(state.id);
+    applyEditPermission();
     renderTimeline();
     renderItems();
+    renderRecipients();
   }
 
   // ---------- イベント ----------
@@ -469,7 +880,7 @@
       alert(`タイムラインは最大${MAX_LIST_LENGTH}件まで追加できます。`);
       return;
     }
-    state.timeline.push({ id: uuid(), time: '', content: '' });
+    state.timeline.push({ id: uuid(), date: '', time: '', content: '' });
     renderTimeline();
     scheduleSave();
   });
@@ -529,7 +940,7 @@
       if (type === 'timeline') {
         suggestions.forEach(s => {
           if (state.timeline.length >= MAX_LIST_LENGTH) return;
-          state.timeline.push({ id: uuid(), time: s.time || '', content: s.content || '' });
+          state.timeline.push({ id: uuid(), date: '', time: s.time || '', content: s.content || '' });
         });
         renderTimeline();
       } else {
@@ -563,8 +974,19 @@
   });
 
   createBtn.addEventListener('click', () => {
+    if (!auth.member) {
+      alert('しおりを作成するにはログインが必要です。');
+      loginError.classList.add('hidden');
+      openModal(loginModal);
+      return;
+    }
     const newId = uuid();
     window.location.href = buildShareUrl(newId);
+  });
+
+  loginRequiredLoginBtn.addEventListener('click', () => {
+    loginError.classList.add('hidden');
+    openModal(loginModal);
   });
 
   deleteBtn.addEventListener('click', async () => {
@@ -590,13 +1012,273 @@
     }
   });
 
+  // ---------- 公開相手（招待メール送信） ----------
+  addRecipientBtn.addEventListener('click', () => {
+    const email = newRecipientEmail.value.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      alert('正しいメールアドレスを入力してください。');
+      return;
+    }
+    if (state.sharedWith.includes(email)) {
+      newRecipientEmail.value = '';
+      return;
+    }
+    if (state.sharedWith.length >= 30) {
+      alert('公開相手は最大30件までです。');
+      return;
+    }
+    state.sharedWith.push(email);
+    newRecipientEmail.value = '';
+    renderRecipients();
+    scheduleSave();
+  });
+
+  sendInviteBtn.addEventListener('click', async () => {
+    inviteStatus.classList.add('hidden');
+    if (state.sharedWith.length === 0) {
+      alert('先にメールアドレスを追加してください。');
+      return;
+    }
+    sendInviteBtn.disabled = true;
+    sendInviteBtn.textContent = '送信中…';
+    try {
+      const result = await apiPost({
+        action: 'invite',
+        token: auth.token,
+        id: state.id,
+        emails: state.sharedWith,
+        shareUrl: buildShareUrl(state.id)
+      });
+      if (result.success) {
+        inviteStatus.textContent = `${result.sent || state.sharedWith.length}件のメールを送信しました。`;
+        inviteStatus.className = 'text-xs text-green-600';
+      } else {
+        inviteStatus.textContent = result.error || '送信に失敗しました。';
+        inviteStatus.className = 'text-xs text-red-500';
+      }
+      inviteStatus.classList.remove('hidden');
+    } catch (e) {
+      inviteStatus.textContent = '送信に失敗しました（通信エラー）。';
+      inviteStatus.className = 'text-xs text-red-500';
+      inviteStatus.classList.remove('hidden');
+    } finally {
+      sendInviteBtn.disabled = false;
+      sendInviteBtn.textContent = '✉️ 登録した相手にURLを送信';
+    }
+  });
+
+  // ---------- 会員認証：イベント ----------
+  openLoginBtn.addEventListener('click', () => {
+    loginError.classList.add('hidden');
+    openModal(loginModal);
+  });
+  openRegisterBtn.addEventListener('click', () => {
+    registerError.classList.add('hidden');
+    openModal(registerModal);
+  });
+  switchToLoginBtn.addEventListener('click', () => {
+    closeModal(registerModal);
+    loginError.classList.add('hidden');
+    openModal(loginModal);
+  });
+  switchToRegisterBtn.addEventListener('click', () => {
+    closeModal(loginModal);
+    registerError.classList.add('hidden');
+    openModal(registerModal);
+  });
+  switchToForgotBtn.addEventListener('click', () => {
+    closeModal(loginModal);
+    forgotError.classList.add('hidden');
+    forgotSuccess.classList.add('hidden');
+    openModal(forgotModal);
+  });
+
+  registerSubmitBtn.addEventListener('click', async () => {
+    const nickname = registerNickname.value.trim();
+    const email = registerEmail.value.trim();
+    registerError.classList.add('hidden');
+
+    if (!nickname || !email) {
+      registerError.textContent = 'ニックネームとメールアドレスを入力してください。';
+      registerError.classList.remove('hidden');
+      return;
+    }
+
+    registerSubmitBtn.disabled = true;
+    registerSubmitBtn.textContent = '登録中…';
+    try {
+      const result = await apiPost({ action: 'register', nickname: nickname, email: email });
+      if (result.success) {
+        closeModal(registerModal);
+        registerNickname.value = '';
+        loginEmail.value = email;
+        registerEmail.value = '';
+        alert(result.warning || 'ご入力のメールアドレスに仮パスワードをお送りしました。届いたパスワードでログインしてください。');
+        loginError.classList.add('hidden');
+        openModal(loginModal);
+      } else {
+        registerError.textContent = result.error || '登録に失敗しました。';
+        registerError.classList.remove('hidden');
+      }
+    } catch (e) {
+      registerError.textContent = '登録に失敗しました（通信エラー）。';
+      registerError.classList.remove('hidden');
+    } finally {
+      registerSubmitBtn.disabled = false;
+      registerSubmitBtn.textContent = '登録して仮パスワードを受け取る';
+    }
+  });
+
+  loginPasswordToggle.addEventListener('click', () => {
+    const showing = loginPassword.type === 'text';
+    loginPassword.type = showing ? 'password' : 'text';
+    loginPasswordToggle.textContent = showing ? '表示' : '非表示';
+  });
+
+  loginSubmitBtn.addEventListener('click', async () => {
+    const email = loginEmail.value.trim();
+    const password = loginPassword.value;
+    loginError.classList.add('hidden');
+
+    if (!email || !password) {
+      loginError.textContent = 'メールアドレスとパスワードを入力してください。';
+      loginError.classList.remove('hidden');
+      return;
+    }
+
+    loginSubmitBtn.disabled = true;
+    loginSubmitBtn.textContent = 'ログイン中…';
+    try {
+      const result = await apiPost({ action: 'login', email: email, password: password });
+      if (result.success) {
+        localStorage.setItem(AUTH_TOKEN_KEY, result.token);
+        // ページを再読み込みし、ログイン状態・編集権限をまとめて再取得する
+        window.location.reload();
+        return;
+      } else {
+        loginError.textContent = result.error || 'ログインに失敗しました。';
+        loginError.classList.remove('hidden');
+      }
+    } catch (e) {
+      loginError.textContent = 'ログインに失敗しました（通信エラー）。';
+      loginError.classList.remove('hidden');
+    } finally {
+      loginSubmitBtn.disabled = false;
+      loginSubmitBtn.textContent = 'ログイン';
+    }
+  });
+
+  forgotSubmitBtn.addEventListener('click', async () => {
+    const email = forgotEmail.value.trim();
+    forgotError.classList.add('hidden');
+    forgotSuccess.classList.add('hidden');
+
+    if (!email) {
+      forgotError.textContent = 'メールアドレスを入力してください。';
+      forgotError.classList.remove('hidden');
+      return;
+    }
+
+    forgotSubmitBtn.disabled = true;
+    forgotSubmitBtn.textContent = '送信中…';
+    try {
+      const result = await apiPost({ action: 'forgotPassword', email: email });
+      if (result.success) {
+        forgotSuccess.textContent = '登録されている場合、仮パスワードをメールで送信しました。';
+        forgotSuccess.classList.remove('hidden');
+        forgotEmail.value = '';
+      } else {
+        forgotError.textContent = result.error || '送信に失敗しました。';
+        forgotError.classList.remove('hidden');
+      }
+    } catch (e) {
+      forgotError.textContent = '送信に失敗しました（通信エラー）。';
+      forgotError.classList.remove('hidden');
+    } finally {
+      forgotSubmitBtn.disabled = false;
+      forgotSubmitBtn.textContent = '仮パスワードを送信';
+    }
+  });
+
+  openChangePasswordBtn.addEventListener('click', () => {
+    isForcedPasswordChange = false;
+    changePasswordForcedNote.classList.add('hidden');
+    currentPasswordWrap.classList.remove('hidden');
+    changePasswordCloseBtn.classList.remove('hidden');
+    changePasswordError.classList.add('hidden');
+    currentPasswordInput.value = '';
+    newPasswordInput.value = '';
+    openModal(changePasswordModal);
+  });
+
+  newPasswordToggle.addEventListener('click', () => {
+    const showing = newPasswordInput.type === 'text';
+    newPasswordInput.type = showing ? 'password' : 'text';
+    newPasswordToggle.textContent = showing ? '表示' : '非表示';
+  });
+
+  changePasswordSubmitBtn.addEventListener('click', async () => {
+    const currentPassword = currentPasswordInput.value;
+    const newPassword = newPasswordInput.value;
+    changePasswordError.classList.add('hidden');
+
+    if (!newPassword || newPassword.length < 8) {
+      changePasswordError.textContent = '新しいパスワードは8文字以上で入力してください。';
+      changePasswordError.classList.remove('hidden');
+      return;
+    }
+
+    changePasswordSubmitBtn.disabled = true;
+    changePasswordSubmitBtn.textContent = '変更中…';
+    try {
+      const result = await apiPost({
+        action: 'changePassword',
+        token: auth.token,
+        currentPassword: currentPassword,
+        newPassword: newPassword
+      });
+      if (result.success) {
+        if (auth.member) auth.member.mustChangePassword = false;
+        isForcedPasswordChange = false;
+        closeModal(changePasswordModal);
+        currentPasswordInput.value = '';
+        newPasswordInput.value = '';
+        alert('パスワードを変更しました。');
+      } else {
+        changePasswordError.textContent = result.error || '変更に失敗しました。';
+        changePasswordError.classList.remove('hidden');
+      }
+    } catch (e) {
+      changePasswordError.textContent = '変更に失敗しました（通信エラー）。';
+      changePasswordError.classList.remove('hidden');
+    } finally {
+      changePasswordSubmitBtn.disabled = false;
+      changePasswordSubmitBtn.textContent = '変更する';
+    }
+  });
+
+  logoutBtn.addEventListener('click', async () => {
+    try {
+      await apiPost({ action: 'logout', token: auth.token });
+    } catch (e) {
+      // 通信エラーでもクライアント側のログイン状態はクリアする
+    }
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    window.location.reload();
+  });
+
   // ---------- 初期化 ----------
   async function init() {
+    await restoreAuth();
+    renderAuthBar();
+
     const id = getIdFromUrl();
 
     if (!id) {
       renderHistory();
+      if (auth.member) loadMyItineraries();
       showView(landingView);
+      if (auth.member && auth.member.mustChangePassword) openForcedChangePassword();
       return;
     }
 
@@ -615,12 +1297,29 @@
         state.dates = result.data.dates || '';
         state.timeline = result.data.timeline || [];
         state.items = result.data.items || [];
+        state.sharedWith = result.data.sharedWith || [];
+        canEdit = !!result.data.canEdit;
+        upsertHistory(state.id, state.title, state.dates);
+        renderAll();
+        showView(editorView);
+        if (auth.member && auth.member.mustChangePassword) openForcedChangePassword();
+      } else if (result.error === 'not_found') {
+        if (auth.member) {
+          // 新規作成: ログイン中なので、この場で作成して自分の所有物にできる
+          canEdit = true;
+          state.sharedWith = [];
+          upsertHistory(state.id, state.title, state.dates);
+          renderAll();
+          showView(editorView);
+          if (auth.member.mustChangePassword) openForcedChangePassword();
+        } else {
+          // 未ログインでは新規作成できないため、ログインを促す
+          showView(loginRequiredView);
+        }
+      } else {
+        loadingView.innerHTML =
+          '<p class="text-red-400 text-sm px-6">⚠️ データの取得に失敗しました。通信環境をご確認のうえ再読み込みしてください。</p>';
       }
-      // success:false（＝新規ID）の場合は空の状態のまま編集画面を表示し、
-      // 最初の保存で新規行がスプレッドシートに作られる。
-      upsertHistory(state.id, state.title, state.dates);
-      renderAll();
-      showView(editorView);
     } catch (e) {
       loadingView.innerHTML =
         '<p class="text-red-400 text-sm px-6">⚠️ データの取得に失敗しました。通信環境をご確認のうえ再読み込みしてください。</p>';
