@@ -20,7 +20,7 @@
 
 <!-- ============ ここを自分の GAS Web App URL に書き換えてください ============ -->
 <script>
-  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbyGuwXo0anngEvBsnJ6KyNAbaVRJkox0IzfBaWPjSCGeQ9WojOJPZap4f_lc_uVGdcm/exec';
+  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbytvsBAjAc52PybFKsZze-nPh-BCYJJmDkSadJpNwrlYTjygx2nLhB_COxLGCkDpi3S/exec';
 </script>
 <!-- ========================================================================== -->
 
@@ -39,6 +39,12 @@
       class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full shadow-md transition">
       ＋ 新しいしおりを作成
     </button>
+
+    <!-- このブラウザで過去に開いたしおりの履歴（localStorage） -->
+    <div id="historySection" class="hidden mt-10 text-left max-w-md mx-auto">
+      <h2 class="text-sm font-bold text-slate-400 mb-2 text-center">📖 過去に開いたしおり</h2>
+      <div id="historyList" class="space-y-2"></div>
+    </div>
   </div>
 
   <!-- しおり編集画面 -->
@@ -100,6 +106,13 @@
         </button>
       </div>
     </section>
+
+    <!-- 削除 -->
+    <section class="text-center pt-2">
+      <button id="deleteBtn" class="text-xs text-slate-400 hover:text-red-500 underline transition">
+        🗑 このしおりを削除する
+      </button>
+    </section>
   </div>
 
   <!-- 保存ステータス（右下固定） -->
@@ -136,6 +149,10 @@
   // しおりURLの id はアクセス権そのもの（知っている人だけが編集できる）なので、
   // 予測されにくい十分なランダム性を持たせる。サーバー側(Code.gs)もこの形式のみ受け付ける。
   const MAX_LIST_LENGTH = 200; // サーバー側の上限と合わせる
+
+  // 過去に開いたしおりの履歴（このブラウザのlocalStorageのみに保存。サーバー側には送らない）
+  const HISTORY_KEY = 'tabiShioriHistory_v1';
+  const MAX_HISTORY = 30;
 
   // ---------- ユーティリティ ----------
   function uuid() {
@@ -174,6 +191,37 @@
     };
   }
 
+  // ---------- 履歴（localStorage） ----------
+  // サーバーにユーザー登録の概念が無いため、「過去の登録一覧」はこの端末・この
+  // ブラウザだけが憶えている（他の端末や別ブラウザには表示されない）。
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveHistoryList(list) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, MAX_HISTORY)));
+    } catch (e) {
+      // localStorageが使えない環境（プライベートモード等）では履歴機能を静かに諦める
+    }
+  }
+
+  function upsertHistory(id, title, dates) {
+    const list = loadHistory().filter(e => e.id !== id);
+    list.unshift({ id: id, title: title || '', dates: dates || '', visitedAt: Date.now() });
+    saveHistoryList(list);
+  }
+
+  function removeFromHistory(id) {
+    saveHistoryList(loadHistory().filter(e => e.id !== id));
+  }
+
   // ---------- 状態 ----------
   let state = {
     id: null,
@@ -200,6 +248,9 @@
   const shareUrlInput = document.getElementById('shareUrlInput');
   const copyUrlBtn = document.getElementById('copyUrlBtn');
   const saveStatus = document.getElementById('saveStatus');
+  const deleteBtn = document.getElementById('deleteBtn');
+  const historySection = document.getElementById('historySection');
+  const historyList = document.getElementById('historyList');
 
   const timelineRowTemplate = document.getElementById('timelineRowTemplate');
   const itemRowTemplate = document.getElementById('itemRowTemplate');
@@ -227,6 +278,15 @@
     return res.json();
   }
 
+  async function deleteItinerary(id) {
+    const res = await fetch(GAS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'delete', id: id })
+    });
+    return res.json();
+  }
+
   // ---------- 保存ステータス表示 ----------
   function showSaveStatus(text) {
     saveStatus.textContent = text;
@@ -240,6 +300,7 @@
       if (result.success) {
         const t = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
         showSaveStatus(`保存済み（${t}）`);
+        upsertHistory(state.id, state.title, state.dates);
       } else {
         showSaveStatus('保存に失敗しました');
       }
@@ -327,6 +388,67 @@
       });
 
       itemsList.appendChild(node);
+    });
+  }
+
+  // 【XSS対策】履歴の title/dates もユーザー入力なので、必ず textContent で
+  // 挿入する（innerHTMLでの組み立ては行わない）。
+  function renderHistory() {
+    const list = loadHistory();
+    historyList.innerHTML = '';
+
+    if (list.length === 0) {
+      historySection.classList.add('hidden');
+      return;
+    }
+    historySection.classList.remove('hidden');
+
+    list.forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'bg-white rounded-xl shadow-sm p-3 flex items-center gap-2';
+
+      const info = document.createElement('button');
+      info.type = 'button';
+      info.className = 'flex-1 min-w-0 text-left';
+      const titleP = document.createElement('p');
+      titleP.className = 'font-bold text-sm truncate';
+      titleP.textContent = entry.title && entry.title.trim() ? entry.title : '（無題のしおり）';
+      const subP = document.createElement('p');
+      subP.className = 'text-xs text-slate-400 truncate';
+      subP.textContent = entry.dates || '';
+      info.appendChild(titleP);
+      info.appendChild(subP);
+      info.addEventListener('click', () => { window.location.href = buildShareUrl(entry.id); });
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'text-xs text-slate-300 hover:text-red-400 px-2 py-1 shrink-0 transition';
+      delBtn.textContent = '削除';
+      delBtn.addEventListener('click', async () => {
+        const label = titleP.textContent;
+        if (!confirm(`「${label}」を削除しますか？\nこの操作は取り消せません。`)) return;
+        delBtn.disabled = true;
+        delBtn.textContent = '削除中…';
+        try {
+          const result = await deleteItinerary(entry.id);
+          if (result.success || result.error === 'not_found') {
+            removeFromHistory(entry.id);
+            renderHistory();
+          } else {
+            alert(result.error || '削除に失敗しました。');
+            delBtn.disabled = false;
+            delBtn.textContent = '削除';
+          }
+        } catch (e) {
+          alert('削除に失敗しました（通信エラー）。');
+          delBtn.disabled = false;
+          delBtn.textContent = '削除';
+        }
+      });
+
+      row.appendChild(info);
+      row.appendChild(delBtn);
+      historyList.appendChild(row);
     });
   }
 
@@ -445,11 +567,35 @@
     window.location.href = buildShareUrl(newId);
   });
 
+  deleteBtn.addEventListener('click', async () => {
+    const label = state.title && state.title.trim() ? state.title : 'このしおり';
+    if (!confirm(`「${label}」を削除しますか？\nこの操作は取り消せません。`)) return;
+
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = '削除中…';
+    try {
+      const result = await deleteItinerary(state.id);
+      if (result.success || result.error === 'not_found') {
+        removeFromHistory(state.id);
+        window.location.href = window.location.pathname; // id無しのトップページへ
+      } else {
+        alert(result.error || '削除に失敗しました。');
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = '🗑 このしおりを削除する';
+      }
+    } catch (e) {
+      alert('削除に失敗しました（通信エラー）。');
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = '🗑 このしおりを削除する';
+    }
+  });
+
   // ---------- 初期化 ----------
   async function init() {
     const id = getIdFromUrl();
 
     if (!id) {
+      renderHistory();
       showView(landingView);
       return;
     }
@@ -472,6 +618,7 @@
       }
       // success:false（＝新規ID）の場合は空の状態のまま編集画面を表示し、
       // 最初の保存で新規行がスプレッドシートに作られる。
+      upsertHistory(state.id, state.title, state.dates);
       renderAll();
       showView(editorView);
     } catch (e) {
