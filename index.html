@@ -6,7 +6,7 @@
 <!-- 念のための多層防御（Defense in depth）。万一XSSの糸口が生まれても、
      外部への読み込み・送信先をあらかじめ絞ることで被害を抑える。 -->
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data:; base-uri 'none'; form-action 'none';">
+  content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://script.google.com https://script.googleusercontent.com; img-src 'self' data:; base-uri 'none'; form-action 'none';">
 <title>旅のしおり</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,11 +18,11 @@
 </head>
 <body class="bg-orange-50 min-h-screen text-slate-800">
 
-<!-- ============ ここを自分の GAS Web App URL に書き換えてください ============ -->
+<!-- 設定（GAS Web App URL など）は config.js に記述 -->
+<script src="config.js"></script>
 <script>
-  const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbytvsBAjAc52PybFKsZze-nPh-BCYJJmDkSadJpNwrlYTjygx2nLhB_COxLGCkDpi3S/exec';
+  const GAS_API_URL = (window.APP_CONFIG && window.APP_CONFIG.GAS_API_URL) || '';
 </script>
-<!-- ========================================================================== -->
 
 <div id="authBar" class="max-w-2xl mx-auto px-4 pt-4 flex justify-end gap-4 text-xs">
   <span id="authGuestLinks" class="hidden gap-4">
@@ -109,6 +109,10 @@
           class="text-sm text-white bg-orange-500 hover:bg-orange-600 rounded-lg py-2 transition disabled:opacity-50 disabled:cursor-not-allowed">
           ✨ AIにおまかせ
         </button>
+        <button id="openImportBtn"
+          class="col-span-2 text-sm text-orange-700 bg-orange-100 hover:bg-orange-200 rounded-lg py-2 transition">
+          📄 予定表から読み込み（画像・Excel・PDF・テキスト）
+        </button>
       </div>
     </section>
 
@@ -168,6 +172,11 @@
       </button>
     </section>
   </div>
+
+  <!-- バージョン表示 -->
+  <footer class="text-center text-[11px] text-slate-300 pt-6 pb-2 select-all">
+    旅のしおり <span id="appVersion"></span> ／ GAS <span id="gasVersion">確認中…</span>
+  </footer>
 
   <!-- 保存ステータス（右下固定） -->
   <div id="saveStatus"
@@ -272,6 +281,81 @@
       class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg transition disabled:opacity-50">
       変更する
     </button>
+  </div>
+</div>
+
+<!-- 予定表読み込みモーダル -->
+<div id="importModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-3 z-50">
+  <div class="bg-white rounded-2xl shadow-lg w-full max-w-2xl max-h-[92vh] flex flex-col">
+    <div class="flex justify-between items-center px-5 pt-5 pb-3 border-b border-slate-100">
+      <h2 class="font-bold text-lg">📄 予定表から読み込み</h2>
+      <button class="modal-close-btn text-slate-400 hover:text-slate-600" data-modal="importModal">✕</button>
+    </div>
+
+    <!-- ステップ1：ファイル選択 -->
+    <div id="importStep1" class="p-5 space-y-4 overflow-y-auto">
+      <label id="importDropZone"
+        class="block border-2 border-dashed border-orange-300 rounded-xl p-6 text-center cursor-pointer hover:bg-orange-50 transition">
+        <input id="importFileInput" type="file" multiple class="hidden"
+          accept="image/*,.pdf,application/pdf,.xlsx,.xls,.xlsm,.ods,.csv,.tsv,.txt" />
+        <p class="text-3xl mb-1">📷 📊 📑</p>
+        <p class="text-sm font-bold text-orange-700">タップしてファイルを選ぶ／ここにドロップ</p>
+        <p class="text-xs text-slate-400 mt-1">画像（写真・スクショ）・Excel・CSV・PDF・テキスト／最大5ファイル<br>スクリーンショットは Ctrl+V で貼り付けもできます</p>
+      </label>
+      <div id="importFileList" class="space-y-2"></div>
+      <div>
+        <p class="text-xs text-slate-500 mb-1">または、予定表の文字をそのまま貼り付け</p>
+        <textarea id="importText" rows="4" maxlength="30000"
+          placeholder="例）11/7 9:00 羽田空港 出発&#10;11/7 10:30 出雲縁結び空港 到着"
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-orange-400"></textarea>
+      </div>
+      <p class="text-xs text-slate-400">年が書かれていない予定は、しおりの日程（<span id="importDatesHint"></span>）をもとにAIが日付を補います。読み取り結果は反映前に確認・修正できます。</p>
+      <p id="importError" class="hidden text-xs text-red-500"></p>
+      <button id="importParseBtn"
+        class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-lg transition disabled:opacity-50">
+        ✨ AIで読み取る
+      </button>
+    </div>
+
+    <!-- ステップ2：確認・修正 -->
+    <div id="importStep2" class="hidden flex flex-col min-h-0">
+      <div class="px-5 pt-4 pb-2 space-y-2">
+        <p class="text-sm text-slate-600">読み取り結果です。<b>そのまま書き換えて修正</b>できます。不要な行はチェックを外すか ✕ で削除してください。</p>
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <label class="flex items-center gap-1 text-slate-500"><input id="importCheckAll" type="checkbox" class="w-4 h-4 accent-orange-500" checked /> すべて選択</label>
+          <span class="text-slate-300">|</span>
+          <span class="text-slate-500">選択行の日付を</span>
+          <button id="importShiftMinus" class="border border-slate-200 rounded px-2 py-1 hover:bg-orange-50">−1日</button>
+          <button id="importShiftPlus" class="border border-slate-200 rounded px-2 py-1 hover:bg-orange-50">＋1日</button>
+          <span class="text-slate-500 ml-1">まとめて</span>
+          <input id="importBulkDate" type="date" class="border border-slate-200 rounded px-1 py-0.5" />
+          <button id="importBulkDateBtn" class="border border-slate-200 rounded px-2 py-1 hover:bg-orange-50">に設定</button>
+        </div>
+      </div>
+      <div id="importPreviewList" class="px-5 pb-2 space-y-2 overflow-y-auto min-h-0 flex-1"></div>
+      <div class="px-5 pb-1">
+        <button id="importAddRowBtn"
+          class="w-full text-sm text-orange-600 border border-dashed border-orange-300 rounded-lg py-1.5 hover:bg-orange-50 transition">
+          ＋ 行を追加
+        </button>
+      </div>
+      <div class="px-5 py-4 border-t border-slate-100 space-y-3">
+        <div class="flex gap-4 text-sm">
+          <label class="flex items-center gap-1"><input type="radio" name="importMode" value="append" class="accent-orange-500" checked /> 今の予定に追加</label>
+          <label class="flex items-center gap-1"><input type="radio" name="importMode" value="replace" class="accent-orange-500" /> 今の予定と置き換え</label>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <button id="importBackBtn"
+            class="text-sm text-slate-500 border border-slate-200 rounded-lg py-2 hover:bg-slate-50 transition">
+            ← 戻る
+          </button>
+          <button id="importApplyBtn"
+            class="col-span-2 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg transition disabled:opacity-50">
+            タイムラインに反映
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -499,7 +583,7 @@
     });
   });
 
-  [registerModal, loginModal, forgotModal, changePasswordModal].forEach(modal => {
+  [registerModal, loginModal, forgotModal, changePasswordModal, document.getElementById('importModal')].forEach(modal => {
     modal.addEventListener('click', (ev) => {
       if (ev.target !== modal) return; // 背景（カード外側）クリックのみ対象
       if (modal === changePasswordModal && isForcedPasswordChange) return; // 強制変更中は閉じさせない
@@ -965,6 +1049,391 @@
   suggestTimelineBtn.addEventListener('click', () => requestSuggestions('timeline', suggestTimelineBtn));
   suggestItemsBtn.addEventListener('click', () => requestSuggestions('items', suggestItemsBtn));
 
+  // ---------- 予定表から読み込み（画像・Excel・PDF・テキスト → AI → 確認・修正 → 反映） ----------
+  // 画像/PDFはGeminiで直接読み取り、Excel/CSVはブラウザ側で表のテキストに変換してからGeminiで整理する。
+  // 【XSS対策】読み取り結果・ファイル名はすべて .value / textContent で表示する。
+  const IMPORT_MAX_FILES = 5;
+  const IMPORT_MAX_FILE_BYTES = 10 * 1024 * 1024; // 1ファイルあたり10MBまで
+  const IMPORT_IMAGE_MAX_PX = 2000;              // 画像は長辺2000pxに縮小して送る
+  const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+
+  const importModal = document.getElementById('importModal');
+  const openImportBtn = document.getElementById('openImportBtn');
+  const importStep1 = document.getElementById('importStep1');
+  const importStep2 = document.getElementById('importStep2');
+  const importDropZone = document.getElementById('importDropZone');
+  const importFileInput = document.getElementById('importFileInput');
+  const importFileList = document.getElementById('importFileList');
+  const importText = document.getElementById('importText');
+  const importDatesHint = document.getElementById('importDatesHint');
+  const importError = document.getElementById('importError');
+  const importParseBtn = document.getElementById('importParseBtn');
+  const importPreviewList = document.getElementById('importPreviewList');
+  const importCheckAll = document.getElementById('importCheckAll');
+  const importShiftMinus = document.getElementById('importShiftMinus');
+  const importShiftPlus = document.getElementById('importShiftPlus');
+  const importBulkDate = document.getElementById('importBulkDate');
+  const importBulkDateBtn = document.getElementById('importBulkDateBtn');
+  const importAddRowBtn = document.getElementById('importAddRowBtn');
+  const importBackBtn = document.getElementById('importBackBtn');
+  const importApplyBtn = document.getElementById('importApplyBtn');
+
+  let importFiles = [];  // File[]
+  let importRows = [];   // { id, include, date, time, content }
+
+  let xlsxLoading = null;
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (!xlsxLoading) {
+      xlsxLoading = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = XLSX_URL;
+        s.onload = () => resolve(window.XLSX);
+        s.onerror = () => { xlsxLoading = null; reject(new Error('Excel読み込み用ライブラリを取得できませんでした。')); };
+        document.head.appendChild(s);
+      });
+    }
+    return xlsxLoading;
+  }
+
+  function fileKind(file) {
+    const name = (file.name || '').toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    if (type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic|heif|bmp)$/.test(name)) return 'image';
+    if (type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+    if (/\.(xlsx|xls|xlsm|ods)$/.test(name)) return 'sheet';
+    if (/\.(csv|tsv|txt)$/.test(name) || type.startsWith('text/')) return 'text';
+    return 'unknown';
+  }
+  const KIND_ICON = { image: '🖼', pdf: '📑', sheet: '📊', text: '📝', unknown: '❓' };
+
+  function readAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(new Error('ファイルを読み込めませんでした。'));
+      r.readAsDataURL(file);
+    });
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('image decode failed'));
+      img.src = src;
+    });
+  }
+
+  // 画像を縮小してJPEGのbase64にする（ブラウザで表示できない形式はそのまま送る）
+  async function imageToPayload(file) {
+    const dataUrl = await readAsDataURL(file);
+    try {
+      const img = await loadImage(dataUrl);
+      const scale = Math.min(1, IMPORT_IMAGE_MAX_PX / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return { mimeType: 'image/jpeg', data: canvas.toDataURL('image/jpeg', 0.88).split(',')[1] };
+    } catch (e) {
+      // HEIC等：ブラウザで描けない場合は元データのまま送る（Gemini側で読める形式のみ）
+      const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl);
+      if (!m) throw new Error(`「${file.name}」を読み込めませんでした。`);
+      return { mimeType: m[1] || file.type, data: m[2] };
+    }
+  }
+
+  async function pdfToPayload(file) {
+    const dataUrl = await readAsDataURL(file);
+    return { mimeType: 'application/pdf', data: dataUrl.split(',')[1] };
+  }
+
+  // テキスト（CSV等）は UTF-8 → 失敗したら Shift_JIS（Excelで保存したCSV）で読む
+  async function decodeText(file) {
+    const buf = await file.arrayBuffer();
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+    } catch (e) {
+      return new TextDecoder('shift_jis').decode(buf);
+    }
+  }
+
+  async function sheetToText(file) {
+    const XLSX = await loadXlsx();
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    return wb.SheetNames.map(name => {
+      const csv = XLSX.utils.sheet_to_csv(wb.Sheets[name], { blankrows: false })
+        .split('\n').filter(line => !/^[,\s]*$/.test(line)).join('\n');
+      return csv ? `# シート：${name}\n${csv}` : '';
+    }).filter(Boolean).join('\n\n');
+  }
+
+  function showImportError(msg) {
+    importError.textContent = msg;
+    importError.classList.remove('hidden');
+  }
+
+  function renderImportFiles() {
+    importFileList.innerHTML = '';
+    importFiles.forEach((file, idx) => {
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-2 bg-orange-50 rounded-lg px-3 py-2 text-sm';
+      const icon = document.createElement('span');
+      icon.textContent = KIND_ICON[fileKind(file)];
+      const name = document.createElement('span');
+      name.className = 'flex-1 truncate';
+      name.textContent = file.name || '貼り付け画像';
+      const size = document.createElement('span');
+      size.className = 'text-xs text-slate-400 shrink-0';
+      size.textContent = `${Math.max(1, Math.round(file.size / 1024))}KB`;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'text-slate-300 hover:text-red-400 px-1 shrink-0';
+      del.textContent = '✕';
+      del.addEventListener('click', () => { importFiles.splice(idx, 1); renderImportFiles(); });
+      row.append(icon, name, size, del);
+      importFileList.appendChild(row);
+    });
+  }
+
+  function addImportFiles(fileList) {
+    importError.classList.add('hidden');
+    for (const file of Array.from(fileList)) {
+      if (importFiles.length >= IMPORT_MAX_FILES) {
+        showImportError(`ファイルは最大${IMPORT_MAX_FILES}個までです。`);
+        break;
+      }
+      if (fileKind(file) === 'unknown') {
+        showImportError(`「${file.name}」は読み込めない形式です。`);
+        continue;
+      }
+      if (file.size > IMPORT_MAX_FILE_BYTES) {
+        showImportError(`「${file.name}」が大きすぎます（10MBまで）。`);
+        continue;
+      }
+      importFiles.push(file);
+    }
+    renderImportFiles();
+  }
+
+  function showImportStep(step) {
+    importStep1.classList.toggle('hidden', step !== 1);
+    importStep2.classList.toggle('hidden', step !== 2);
+    importStep2.classList.toggle('flex', step === 2);
+  }
+
+  function openImport() {
+    importFiles = [];
+    importRows = [];
+    importText.value = '';
+    importFileInput.value = '';
+    importError.classList.add('hidden');
+    importDatesHint.textContent = state.dates || '未入力';
+    renderImportFiles();
+    showImportStep(1);
+    openModal(importModal);
+  }
+
+  openImportBtn.addEventListener('click', openImport);
+  importFileInput.addEventListener('change', () => { addImportFiles(importFileInput.files); importFileInput.value = ''; });
+
+  ['dragenter', 'dragover'].forEach(ev => importDropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    importDropZone.classList.add('bg-orange-50');
+  }));
+  ['dragleave', 'drop'].forEach(ev => importDropZone.addEventListener(ev, e => {
+    e.preventDefault();
+    importDropZone.classList.remove('bg-orange-50');
+  }));
+  importDropZone.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files) addImportFiles(e.dataTransfer.files); });
+
+  // スクリーンショットの貼り付け（Ctrl+V）
+  document.addEventListener('paste', e => {
+    if (importModal.classList.contains('hidden') || importStep1.classList.contains('hidden')) return;
+    const files = Array.from((e.clipboardData && e.clipboardData.files) || []).filter(f => f.type.startsWith('image/'));
+    if (files.length === 0) return; // 文字の貼り付けは通常どおりtextareaへ
+    e.preventDefault();
+    addImportFiles(files.map((f, i) => new File([f], `貼り付け画像${importFiles.length + i + 1}.png`, { type: f.type })));
+  });
+
+  importParseBtn.addEventListener('click', async () => {
+    importError.classList.add('hidden');
+    if (importFiles.length === 0 && !importText.value.trim()) {
+      showImportError('ファイルを選ぶか、予定表の文字を貼り付けてください。');
+      return;
+    }
+
+    importParseBtn.disabled = true;
+    importParseBtn.textContent = '📂 ファイルを準備中…';
+    try {
+      const files = [];
+      const texts = [];
+      for (const file of importFiles) {
+        const kind = fileKind(file);
+        if (kind === 'image') files.push(await imageToPayload(file));
+        else if (kind === 'pdf') files.push(await pdfToPayload(file));
+        else if (kind === 'sheet') texts.push(`【ファイル：${file.name}】\n` + await sheetToText(file));
+        else if (kind === 'text') texts.push(`【ファイル：${file.name}】\n` + await decodeText(file));
+      }
+      if (importText.value.trim()) texts.push('【貼り付けテキスト】\n' + importText.value.trim());
+
+      importParseBtn.textContent = '✨ AIが読み取り中…（数十秒かかることがあります）';
+      const result = await apiPost({
+        action: 'parseSchedule',
+        token: auth.token || '',
+        title: state.title || '',
+        dates: state.dates || '',
+        files: files,
+        text: texts.join('\n\n').slice(0, 30000)
+      });
+
+      if (!result.success) {
+        showImportError(result.error || '読み取りに失敗しました。');
+        return;
+      }
+      const entries = result.entries || [];
+      if (entries.length === 0) {
+        showImportError('予定を見つけられませんでした。別の画像を試すか、文字で貼り付けてください。');
+        return;
+      }
+      importRows = entries.map(e => ({
+        id: uuid(),
+        include: true,
+        date: e.date || '',
+        time: e.time || '',
+        content: e.content || ''
+      }));
+      importCheckAll.checked = true;
+      renderImportPreview();
+      showImportStep(2);
+    } catch (e) {
+      showImportError(e && e.message ? e.message : '読み取りに失敗しました（通信エラー）。');
+    } finally {
+      importParseBtn.disabled = false;
+      importParseBtn.textContent = '✨ AIで読み取る';
+    }
+  });
+
+  function updateApplyLabel() {
+    const n = importRows.filter(r => r.include && r.content.trim()).length;
+    importApplyBtn.textContent = `タイムラインに反映（${n}件）`;
+    importApplyBtn.disabled = n === 0;
+  }
+
+  function renderImportPreview() {
+    importPreviewList.innerHTML = '';
+    if (importRows.length === 0) {
+      importPreviewList.innerHTML = '<p class="text-sm text-slate-300 text-center py-4">行がありません。「＋ 行を追加」で追加できます</p>';
+    }
+    importRows.forEach(row => {
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-wrap items-center gap-2 rounded-lg p-1 ' + (row.include ? '' : 'opacity-40');
+
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.className = 'w-5 h-5 accent-orange-500 shrink-0';
+      chk.checked = row.include;
+      chk.addEventListener('change', () => {
+        row.include = chk.checked;
+        wrap.classList.toggle('opacity-40', !row.include);
+        updateApplyLabel();
+      });
+
+      const date = document.createElement('input');
+      date.type = 'date';
+      date.className = 'border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-[9.5rem]';
+      date.value = row.date;
+      date.addEventListener('input', () => { row.date = date.value; });
+
+      const time = document.createElement('input');
+      time.type = 'time';
+      time.className = 'border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-24';
+      time.value = row.time;
+      time.addEventListener('input', () => { row.time = time.value; });
+
+      const content = document.createElement('input');
+      content.type = 'text';
+      content.maxLength = 500;
+      content.placeholder = '内容';
+      content.className = 'flex-1 min-w-[10rem] border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-orange-400';
+      content.value = row.content;
+      content.addEventListener('input', () => { row.content = content.value; updateApplyLabel(); });
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'text-slate-300 hover:text-red-400 text-lg px-1';
+      del.title = '削除';
+      del.textContent = '✕';
+      del.addEventListener('click', () => {
+        importRows = importRows.filter(r => r.id !== row.id);
+        renderImportPreview();
+      });
+
+      wrap.append(chk, date, time, content, del);
+      importPreviewList.appendChild(wrap);
+    });
+    updateApplyLabel();
+  }
+
+  function shiftDate(str, days) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    const [y, m, d] = str.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+  }
+
+  importCheckAll.addEventListener('change', () => {
+    importRows.forEach(r => { r.include = importCheckAll.checked; });
+    renderImportPreview();
+  });
+  importShiftMinus.addEventListener('click', () => {
+    importRows.forEach(r => { if (r.include) r.date = shiftDate(r.date, -1); });
+    renderImportPreview();
+  });
+  importShiftPlus.addEventListener('click', () => {
+    importRows.forEach(r => { if (r.include) r.date = shiftDate(r.date, 1); });
+    renderImportPreview();
+  });
+  importBulkDateBtn.addEventListener('click', () => {
+    if (!importBulkDate.value) { alert('設定する日付を選んでください。'); return; }
+    importRows.forEach(r => { if (r.include) r.date = importBulkDate.value; });
+    renderImportPreview();
+  });
+  importAddRowBtn.addEventListener('click', () => {
+    const last = importRows[importRows.length - 1];
+    importRows.push({ id: uuid(), include: true, date: last ? last.date : '', time: '', content: '' });
+    renderImportPreview();
+    const inputs = importPreviewList.querySelectorAll('input[type="text"]');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  });
+  importBackBtn.addEventListener('click', () => showImportStep(1));
+
+  importApplyBtn.addEventListener('click', () => {
+    const rows = importRows.filter(r => r.include && r.content.trim());
+    if (rows.length === 0) return;
+    const mode = (document.querySelector('input[name="importMode"]:checked') || {}).value || 'append';
+
+    if (mode === 'replace' && state.timeline.length > 0) {
+      if (!confirm(`今のタイムライン（${state.timeline.length}件）を消して、読み込んだ${rows.length}件に置き換えますか？`)) return;
+      state.timeline = [];
+    }
+    const room = MAX_LIST_LENGTH - state.timeline.length;
+    if (rows.length > room) {
+      alert(`タイムラインは最大${MAX_LIST_LENGTH}件のため、先頭の${Math.max(room, 0)}件だけ反映します。`);
+    }
+    rows.slice(0, Math.max(room, 0)).forEach(r => {
+      state.timeline.push({ id: uuid(), date: r.date, time: r.time, content: r.content.trim().slice(0, 500) });
+    });
+    renderTimeline();
+    scheduleSave();
+    closeModal(importModal);
+    timelineList.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
   copyUrlBtn.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(shareUrlInput.value);
@@ -1273,8 +1742,25 @@
     window.location.reload();
   });
 
+  // ---------- バージョン表示 ----------
+  // 画面側は config.js の APP_VERSION、サーバー側は GAS の GAS_VERSION を表示する。
+  // （GASを再デプロイし忘れていないかの確認用）
+  async function renderVersion() {
+    document.getElementById('appVersion').textContent =
+      'v' + ((window.APP_CONFIG && window.APP_CONFIG.APP_VERSION) || '不明');
+    const gasEl = document.getElementById('gasVersion');
+    if (!GAS_API_URL) { gasEl.textContent = '未設定'; return; }
+    try {
+      const result = await apiGet({ action: 'version' });
+      gasEl.textContent = result && result.success && result.version ? 'v' + result.version : '不明（要再デプロイ）';
+    } catch (e) {
+      gasEl.textContent = '取得できません';
+    }
+  }
+
   // ---------- 初期化 ----------
   async function init() {
+    renderVersion();
     await restoreAuth();
     renderAuthBar();
 
@@ -1290,7 +1776,7 @@
 
     if (!GAS_API_URL || GAS_API_URL.indexOf('XXXX') !== -1) {
       loadingView.innerHTML =
-        '<p class="text-red-400 text-sm px-6">⚠️ GAS_API_URL が設定されていません。<br>index.html 冒頭の GAS_API_URL を、デプロイしたWebアプリのURLに書き換えてください。</p>';
+        '<p class="text-red-400 text-sm px-6">⚠️ GAS_API_URL が設定されていません。<br>config.js の GAS_API_URL を、デプロイしたWebアプリのURLに書き換えてください。</p>';
       return;
     }
 
